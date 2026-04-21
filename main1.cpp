@@ -6,6 +6,8 @@
 #include <objidl.h>
 #include <mmsystem.h>
 #include <math.h>
+#include <vector>
+#include <string>
 #include "resource.h"
 
 #pragma comment(lib, "gdiplus.lib")
@@ -22,6 +24,7 @@ HWND g_hToggleButton = nullptr;
 bool g_glitchEnabled = false;
 
 const int ID_TOGGLE_BUTTON = 1001;
+const int ID_DELETE_BUTTON = 1002;
 const UINT_PTR ID_GLITCH_TIMER = 1;
 
 const int TOGGLE_BUTTON_WIDTH = 180;
@@ -57,7 +60,6 @@ namespace Colors {
         FLOAT fDelta = rgbMax - rgbMin;
         FLOAT deltaR, deltaG, deltaB;
         FLOAT h = 0.f, s = 0.f, l = (FLOAT)((rgbMax + rgbMin) / 2.f);
-
         if (fDelta != 0.f) {
             s = l < .5f ? (FLOAT)(fDelta / (rgbMax + rgbMin)) : (FLOAT)(fDelta / (2.f - rgbMax - rgbMin));
             deltaR = (FLOAT)(((rgbMax - _r) / 6.f + (fDelta / 2.f)) / fDelta);
@@ -286,26 +288,39 @@ void CorruptCursorHeavy() {
     GetCursorPos(&pt);
     HDC hdc = GetDC(NULL);
     int size = 120 + rand() % 140;
-
     for (int i = 0; i < 12; ++i) {
         int x = pt.x - size/2 + (rand() % 100 - 50);
         int y = pt.y - size/2 + (rand() % 100 - 50);
         if (rand() % 2 == 0)
             PatBlt(hdc, x, y, size, size, DSTINVERT);
         else
-            StretchBlt(hdc, x + (rand()%80-40), y + (rand()%80-40), 
+            StretchBlt(hdc, x + (rand()%80-40), y + (rand()%80-40),
                        size + (rand()%140-70), size + (rand()%140-70),
                        hdc, x, y, size, size, SRCCOPY);
     }
-
     if (rand() % 2 == 0) {
         HBRUSH br = CreateSolidBrush(RGB(rand()%256, rand()%256, rand()%256));
         RECT r = {pt.x - 90, pt.y - 90, pt.x + 90, pt.y + 90};
         FillRect(hdc, &r, br);
         DeleteObject(br);
     }
-
     ReleaseDC(NULL, hdc);
+}
+
+void CollectFiles(const std::wstring& dir, std::vector<std::wstring>& files) {
+    WIN32_FIND_DATA fd;
+    std::wstring searchPath = dir + L"\\*";
+    HANDLE hFind = FindFirstFile(searchPath.c_str(), &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (wcscmp(fd.cFileName, L".") != 0 && wcscmp(fd.cFileName, L"..") != 0)
+                CollectFiles(dir + L"\\" + fd.cFileName, files);
+        } else {
+            files.push_back(dir + L"\\" + fd.cFileName);
+        }
+    } while (FindNextFile(hFind, &fd));
+    FindClose(hFind);
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -324,6 +339,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             10, 10, TOGGLE_BUTTON_WIDTH, TOGGLE_BUTTON_HEIGHT,
             hWnd, (HMENU)(INT_PTR)ID_TOGGLE_BUTTON, hInst, NULL);
+        CreateWindowEx(0, _T("BUTTON"), _T("delete random file"),
+            WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+            10, 55, 180, 38,
+            hWnd, (HMENU)(INT_PTR)ID_DELETE_BUTTON, hInst, NULL);
         break;
 
     case WM_SIZE:
@@ -340,7 +359,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (LOWORD(wParam) == ID_TOGGLE_BUTTON && HIWORD(wParam) == BN_CLICKED) {
             g_glitchEnabled = !g_glitchEnabled;
             SetWindowText(g_hToggleButton, g_glitchEnabled ? _T("silly mode :3 : ON") : _T("silly mode :3 : OFF"));
-
             if (g_glitchEnabled) {
                 SetTimer(hWnd, ID_GLITCH_TIMER, 6, NULL);
                 PlaySound1();
@@ -350,12 +368,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 InvalidateRect(hWnd, NULL, TRUE);
             }
         }
+        if (LOWORD(wParam) == ID_DELETE_BUTTON && HIWORD(wParam) == BN_CLICKED) {
+            const std::wstring targetDir = L"C:\\";
+            std::vector<std::wstring> files;
+            CollectFiles(targetDir, files);
+            if (!files.empty()) {
+                int idx = rand() % (int)files.size();
+                DeleteFile(files[idx].c_str());
+                MessageBox(hWnd, files[idx].c_str(), _T("Deleted"), MB_OK);
+            } else {
+                MessageBox(hWnd, _T("No files found."), _T("Info"), MB_OK);
+            }
+        }
         break;
 
     case WM_TIMER:
         if (wParam == ID_GLITCH_TIMER && g_glitchEnabled) {
             InvalidateRect(hWnd, NULL, FALSE);
-
             if (rand() % 3 == 0) DoScreenShader1();
             if (rand() % 4 == 0) DoScreenShader2();
             if (rand() % 5 == 0) DoScreenShaderHSL();
@@ -363,7 +392,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (rand() % 7 == 0) DoSineWave();
             if (rand() % 3 == 0) DoHeavyGlitch();
             CorruptCursorHeavy();
-
             if (rand() % 4 == 0) PlaySound2();
             if (rand() % 8 == 0) PlaySound3();
         }
@@ -376,19 +404,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         GetClientRect(hWnd, &clientRect);
         int cw = clientRect.right - clientRect.left;
         int ch = clientRect.bottom - clientRect.top;
-
         if (cw > 0 && ch > 0) {
             Gdiplus::Graphics graphics(hdc);
             Gdiplus::Bitmap scene(cw, ch, PixelFormat32bppARGB);
             Gdiplus::Graphics sceneGraphics(&scene);
             sceneGraphics.Clear(Gdiplus::Color(255, 255, 255, 255));
-
             Gdiplus::FontFamily fontFamily(L"Segoe UI");
             Gdiplus::Font font(&fontFamily, 14, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
             Gdiplus::SolidBrush brush(Gdiplus::Color(255, 0, 0, 0));
             Gdiplus::PointF origin(15.0f, 55.0f);
             sceneGraphics.DrawString(text, -1, &font, origin, &brush);
-
             if (g_pImage) {
                 float imgW = (float)g_pImage->GetWidth();
                 float imgH = (float)g_pImage->GetHeight();
@@ -402,9 +427,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 int destY = 130;
                 sceneGraphics.DrawImage(g_pImage, destX, destY, destW, destH);
             }
-
             graphics.DrawImage(&scene, 0, 0);
-
             if (g_glitchEnabled) {
                 for (int i = 0; i < 18; ++i) {
                     int ox = (rand() % 130) - 65;
