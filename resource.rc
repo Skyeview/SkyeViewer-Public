@@ -1,0 +1,4 @@
+#include "resource.h"
+
+IDR_PNG1 RCDATA "image.png"
+IDI_APPICON ICON "icon.ico"

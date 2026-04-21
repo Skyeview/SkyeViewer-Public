@@ -1,0 +1,2 @@
+#define IDR_PNG1 101
+#define IDI_APPICON 102
