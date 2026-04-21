@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 #include "resource.h"
+#define UNICODE
+#define _UNICODE
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
